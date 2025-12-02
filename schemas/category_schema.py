@@ -9,7 +9,8 @@ if TYPE_CHECKING:
 
 
 from pydantic import Field
-...
+
 class CategorySchema(BaseSchema):
     name: str = Field(..., min_length=1, max_length=100, description="Category name (required, unique)")
+    # Prevent recursion and avoid mutable default
     products: Optional[List['ProductSchema']] = Field(default_factory=list, exclude=True)
