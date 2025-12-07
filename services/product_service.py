@@ -129,41 +129,43 @@ class ProductService(BaseServiceImpl):
 
     def delete(self, id_key: int) -> None:
         """
-        Delete product with validation to prevent loss of sales history
+        Delete product with validation to prevent loss of sales history.
 
-        Raises:
-            ValueError: If product has associated order details (sales history)
-            InstanceNotFoundError: If product doesn't exist
+        If the product has associated order details, respond with 400
+        so the client sees a clear error instead of a 500.
         """
         from models.order_detail import OrderDetailModel
         from sqlalchemy import select
+        try:
+            from fastapi import HTTPException, status
+        except Exception:  # pragma: no cover - fallback if FastAPI not present
+            HTTPException = None
+            status = None
 
-        # Check if product has sales history
         stmt = select(OrderDetailModel).where(
             OrderDetailModel.product_id == id_key
         ).limit(1)
 
-        # Get session from repository
         has_sales = self._repository.session.scalars(stmt).first()
 
         if has_sales:
             logger.error(
                 f"Cannot delete product {id_key}: has associated sales history"
             )
-            raise ValueError(
-                f"Cannot delete product {id_key}: product has associated sales history. "
-                f"Consider marking as inactive instead of deleting."
+            message = (
+                "No se puede eliminar el producto porque tiene ventas registradas. "
+                "Considerá marcarlo como inactivo."
             )
+            if HTTPException and status:
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=message)
+            raise ValueError(message)
 
-        # Safe to delete
         logger.info(f"Deleting product {id_key} (no sales history)")
         super().delete(id_key)
 
-        # Invalidate specific product cache
         cache_key = self.cache.build_key(self.cache_prefix, "id", id=id_key)
         self.cache.delete(cache_key)
 
-        # Invalidate list cache
         self._invalidate_list_cache()
 
     def _invalidate_list_cache(self):
